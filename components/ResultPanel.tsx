@@ -10,6 +10,33 @@ interface ResultPanelProps {
   onReset: () => void
 }
 
+async function saveFileViaPicker(blob: Blob, filename: string): Promise<boolean> {
+  if (!("showSaveFilePicker" in window)) return false
+  try {
+    const handle = await (window as any).showSaveFilePicker({
+      suggestedName: filename,
+      types: [{ description: "PDF 文件", accept: { "application/pdf": [".pdf"] } }],
+    })
+    const writable = await handle.createWritable()
+    await writable.write(blob)
+    await writable.close()
+    return true
+  } catch {
+    return false
+  }
+}
+
+function saveFileViaLink(blob: Blob, filename: string): void {
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement("a")
+  a.href = url
+  a.download = filename
+  document.body.appendChild(a)
+  a.click()
+  document.body.removeChild(a)
+  URL.revokeObjectURL(url)
+}
+
 export function ResultPanel({ jobId, stats, onReset }: ResultPanelProps) {
   const [downloading, setDownloading] = useState(false)
   const [toast, setToast] = useState<{ message: string; type: "success" | "error" } | null>(null)
@@ -25,16 +52,15 @@ export function ResultPanel({ jobId, stats, onReset }: ResultPanelProps) {
         throw new Error(data.error || "下载失败")
       }
       const blob = await response.blob()
-      const url = URL.createObjectURL(blob)
-      const a = document.createElement("a")
-      a.href = url
-      a.download = "translated.pdf"
-      document.body.appendChild(a)
-      a.click()
-      document.body.removeChild(a)
-      URL.revokeObjectURL(url)
+
+      const saved = await saveFileViaPicker(blob, "translated.pdf")
+      if (!saved) {
+        saveFileViaLink(blob, "translated.pdf")
+      }
+
       setToast({ message: "PDF 下载完成！", type: "success" })
     } catch (err) {
+      if (err instanceof Error && err.message.includes("aborted")) return
       setToast({ message: err instanceof Error ? err.message : "下载失败", type: "error" })
     } finally {
       setDownloading(false)
