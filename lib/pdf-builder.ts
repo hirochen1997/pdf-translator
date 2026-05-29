@@ -1,4 +1,5 @@
 import { PDFDocument, rgb, PDFFont } from "pdf-lib"
+import fontkit from "@pdf-lib/fontkit"
 import { readFileSync } from "fs"
 import type { TextBlock, PageData } from "./types"
 
@@ -15,6 +16,7 @@ export class PDFBuilder {
     pageData: PageData[]
   ): Promise<Uint8Array> {
     const pdfDoc = await PDFDocument.load(originalPdfBytes)
+    pdfDoc.registerFontkit(fontkit)
     const font = await pdfDoc.embedFont(this.fontBytes)
     const pages = pdfDoc.getPages()
 

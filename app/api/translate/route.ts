@@ -20,7 +20,9 @@ export async function POST(request: NextRequest) {
     return new Response(JSON.stringify({ error: `文件大小不能超过 ${Math.round(maxFileSize / 1024 / 1024)}MB` }), { status: 400 })
   }
 
-  const pdfBytes = await file.arrayBuffer()
+  const rawPdfBytes = await file.arrayBuffer()
+  const pdfBytesForParsing = rawPdfBytes.slice(0)
+  const pdfBytesForRebuilding = rawPdfBytes.slice(0)
 
   const encoder = new TextEncoder()
   const stream = new ReadableStream({
@@ -39,7 +41,7 @@ export async function POST(request: NextRequest) {
           percent: 5,
           message: "Parsing PDF...",
         })
-        const parsed = await parsePDF(pdfBytes)
+        const parsed = await parsePDF(pdfBytesForParsing)
 
         sendProgress({
           stage: "detecting",
@@ -132,7 +134,7 @@ export async function POST(request: NextRequest) {
         }
 
         const builder = new PDFBuilder(fontPath)
-        const resultBytes = await builder.rebuild(pdfBytes, classifiedBlocks, parsed.pages)
+        const resultBytes = await builder.rebuild(pdfBytesForRebuilding, classifiedBlocks, parsed.pages)
 
         const jobId = crypto.randomUUID()
         await storeResult(jobId, resultBytes)
