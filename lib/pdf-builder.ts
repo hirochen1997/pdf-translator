@@ -1,4 +1,4 @@
-import { PDFDocument, rgb, PDFFont } from "pdf-lib"
+import { PDFDocument, rgb, PDFFont, StandardFonts } from "pdf-lib"
 import fontkit from "@pdf-lib/fontkit"
 import { readFileSync } from "fs"
 import type { TextBlock, PageData } from "./types"
@@ -11,73 +11,82 @@ export class PDFBuilder {
   }
 
   async rebuild(
-    originalPdfBytes: ArrayBuffer,
+    _originalPdfBytes: ArrayBuffer,
     blocks: TextBlock[],
     pageData: PageData[]
   ): Promise<Uint8Array> {
-    const pdfDoc = await PDFDocument.load(originalPdfBytes)
+    const pdfDoc = await PDFDocument.create()
     pdfDoc.registerFontkit(fontkit)
-    const font = await pdfDoc.embedFont(this.fontBytes)
-    const pages = pdfDoc.getPages()
+    const cnFont = await pdfDoc.embedFont(this.fontBytes)
+    const enFont = await pdfDoc.embedFont(StandardFonts.Helvetica)
+    const monoFont = await pdfDoc.embedFont(StandardFonts.Courier)
 
-    for (let i = 0; i < pages.length; i++) {
-      const page = pages[i]
-      const { height: pageHeight } = page.getSize()
-      const pageBlocks = blocks.filter((b) => b.pageNum === i + 1)
+    for (const page of pageData) {
+      const newPage = pdfDoc.addPage([page.width, page.height])
+      const { height: pageHeight } = newPage.getSize()
+      const pageBlocks = blocks.filter((b) => b.pageNum === page.pageNum)
 
       for (const block of pageBlocks) {
-        if (
-          block.category === "code" ||
-          block.category === "formula" ||
-          block.category === "url" ||
-          block.category === "pageNumber"
-        ) {
-          continue
-        }
+        const text = block.translatedText || block.text
+        if (!text.trim()) continue
 
-        if (!block.translatedText) continue
-
-        const { x, y, width: bboxWidth, height: bboxHeight } = block.bbox
-        const pdfY = pageHeight - y - bboxHeight
-
-        page.drawRectangle({
-          x: x - 1,
-          y: pdfY - 1,
-          width: bboxWidth + 4,
-          height: bboxHeight + 2,
-          color: rgb(1, 1, 1),
-          borderWidth: 0,
-        })
-
+        const font = this.getFontForCategory(block.category, cnFont, enFont, monoFont)
         const originalFontSize = block.items[0]?.fontSize || 12
-        const adaptedFontSize = this.calculateFontSize(
-          block.translatedText,
-          bboxWidth,
-          originalFontSize,
-          font
-        )
+        const fontSize = this.calculateFontSize(text, block.bbox.width, originalFontSize, font)
+        const lineHeight = fontSize * 1.5
+        const lines = this.wrapText(text, block.bbox.width, fontSize, font)
 
-        const lines = this.wrapText(
-          block.translatedText,
-          bboxWidth,
-          adaptedFontSize,
-          font
-        )
+        const startX = block.bbox.x
+        const startY = pageHeight - block.bbox.y - fontSize
 
-        const lineHeight = adaptedFontSize * 1.4
         for (let j = 0; j < lines.length; j++) {
-          page.drawText(lines[j], {
-            x,
-            y: pdfY + bboxHeight - adaptedFontSize - j * lineHeight,
-            size: adaptedFontSize,
-            font,
-            color: rgb(0, 0, 0),
-          })
+          const y = startY - j * lineHeight
+          if (y < 0) break
+
+          try {
+            newPage.drawText(lines[j], {
+              x: startX,
+              y,
+              size: fontSize,
+              font,
+              color: rgb(0, 0, 0),
+            })
+          } catch {
+            const safeLine = lines[j].replace(/[^\x20-\x7E\u4e00-\u9fff\u3000-\u303f\uff00-\uffef]/g, "")
+            if (safeLine) {
+              try {
+                newPage.drawText(safeLine, {
+                  x: startX,
+                  y,
+                  size: fontSize,
+                  font: cnFont,
+                  color: rgb(0, 0, 0),
+                })
+              } catch {}
+            }
+          }
         }
       }
     }
 
     return pdfDoc.save()
+  }
+
+  private getFontForCategory(
+    category: string,
+    cnFont: PDFFont,
+    enFont: PDFFont,
+    monoFont: PDFFont
+  ): PDFFont {
+    switch (category) {
+      case "code":
+        return monoFont
+      case "formula":
+      case "url":
+        return enFont
+      default:
+        return cnFont
+    }
   }
 
   private calculateFontSize(
@@ -87,7 +96,8 @@ export class PDFBuilder {
     font: PDFFont
   ): number {
     try {
-      const textWidth = font.widthOfTextAtSize(text, originalSize)
+      const longestLine = text.split("\n").reduce((a, b) => (a.length > b.length ? a : b), "")
+      const textWidth = font.widthOfTextAtSize(longestLine, originalSize)
       if (textWidth <= maxWidth) return originalSize
       const adapted = originalSize * (maxWidth / textWidth)
       return Math.max(adapted, 6)
@@ -102,28 +112,43 @@ export class PDFBuilder {
     fontSize: number,
     font: PDFFont
   ): string[] {
-    const lines: string[] = []
-    let currentLine = ""
+    const inputLines = text.split("\n")
+    const result: string[] = []
 
-    for (const char of text) {
-      const testLine = currentLine + char
+    for (const line of inputLines) {
+      const wrapped = this.wrapSingleLine(line, maxWidth, fontSize, font)
+      result.push(...wrapped)
+    }
+
+    return result.length > 0 ? result : [text]
+  }
+
+  private wrapSingleLine(
+    line: string,
+    maxWidth: number,
+    fontSize: number,
+    font: PDFFont
+  ): string[] {
+    if (!line) return [""]
+    const result: string[] = []
+    let current = ""
+
+    for (const char of line) {
+      const test = current + char
       try {
-        const testWidth = font.widthOfTextAtSize(testLine, fontSize)
-        if (testWidth > maxWidth && currentLine.length > 0) {
-          lines.push(currentLine)
-          currentLine = char
+        const w = font.widthOfTextAtSize(test, fontSize)
+        if (w > maxWidth && current.length > 0) {
+          result.push(current)
+          current = char
         } else {
-          currentLine = testLine
+          current = test
         }
       } catch {
-        currentLine = testLine
+        current = test
       }
     }
 
-    if (currentLine.length > 0) {
-      lines.push(currentLine)
-    }
-
-    return lines.length > 0 ? lines : [text]
+    if (current) result.push(current)
+    return result
   }
 }

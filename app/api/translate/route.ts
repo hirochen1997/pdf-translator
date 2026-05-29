@@ -22,7 +22,6 @@ export async function POST(request: NextRequest) {
 
   const rawPdfBytes = await file.arrayBuffer()
   const pdfBytesForParsing = rawPdfBytes.slice(0)
-  const pdfBytesForRebuilding = rawPdfBytes.slice(0)
 
   const encoder = new TextEncoder()
   const stream = new ReadableStream({
@@ -134,7 +133,7 @@ export async function POST(request: NextRequest) {
         }
 
         const builder = new PDFBuilder(fontPath)
-        const resultBytes = await builder.rebuild(pdfBytesForRebuilding, classifiedBlocks, parsed.pages)
+        const resultBytes = await builder.rebuild(rawPdfBytes, classifiedBlocks, parsed.pages)
 
         const jobId = crypto.randomUUID()
         await storeResult(jobId, resultBytes)
