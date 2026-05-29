@@ -28,3 +28,6 @@ next-env.d.ts
 # fonts (large binary files)
 public/fonts/*.otf
 public/fonts/*.ttf
+
+# temp results
+.tmp/

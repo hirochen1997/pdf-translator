@@ -1,16 +1,47 @@
-const resultStore = new Map<string, { data: Uint8Array; createdAt: number }>()
+import { writeFileSync, readFileSync, existsSync, unlinkSync, mkdirSync } from "fs"
+import path from "path"
+
+const STORE_DIR = path.join(process.cwd(), ".tmp", "results")
+
+function ensureDir() {
+  if (!existsSync(STORE_DIR)) {
+    mkdirSync(STORE_DIR, { recursive: true })
+  }
+}
+
+function getFilePath(jobId: string): string {
+  return path.join(STORE_DIR, `${jobId}.pdf`)
+}
+
+function getMetaPath(jobId: string): string {
+  return path.join(STORE_DIR, `${jobId}.json`)
+}
 
 export async function storeResult(jobId: string, data: Uint8Array): Promise<void> {
-  resultStore.set(jobId, { data, createdAt: Date.now() })
-  setTimeout(() => resultStore.delete(jobId), 10 * 60 * 1000)
+  ensureDir()
+  writeFileSync(getFilePath(jobId), data)
+  writeFileSync(getMetaPath(jobId), JSON.stringify({ createdAt: Date.now() }))
 }
 
 export async function retrieveResult(jobId: string): Promise<Uint8Array | null> {
-  const entry = resultStore.get(jobId)
-  if (!entry) return null
-  if (Date.now() - entry.createdAt > 10 * 60 * 1000) {
-    resultStore.delete(jobId)
+  const filePath = getFilePath(jobId)
+  const metaPath = getMetaPath(jobId)
+
+  if (!existsSync(filePath) || !existsSync(metaPath)) return null
+
+  try {
+    const meta = JSON.parse(readFileSync(metaPath, "utf-8"))
+    if (Date.now() - meta.createdAt > 10 * 60 * 1000) {
+      cleanup(jobId)
+      return null
+    }
+    return new Uint8Array(readFileSync(filePath))
+  } catch {
     return null
   }
-  return entry.data
+}
+
+function cleanup(jobId: string) {
+  try { unlinkSync(getFilePath(jobId)) } catch {}
+  try { unlinkSync(getMetaPath(jobId)) } catch {}
 }

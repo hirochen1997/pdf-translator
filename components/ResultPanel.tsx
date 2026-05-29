@@ -1,5 +1,6 @@
 "use client"
 
+import { useState } from "react"
 import { motion } from "framer-motion"
 
 interface ResultPanelProps {
@@ -9,7 +10,33 @@ interface ResultPanelProps {
 }
 
 export function ResultPanel({ jobId, stats, onReset }: ResultPanelProps) {
-  const downloadUrl = `/api/download?jobId=${jobId}`
+  const [downloading, setDownloading] = useState(false)
+  const [downloadError, setDownloadError] = useState<string | null>(null)
+
+  const handleDownload = async () => {
+    setDownloading(true)
+    setDownloadError(null)
+    try {
+      const response = await fetch(`/api/download?jobId=${jobId}`)
+      if (!response.ok) {
+        const data = await response.json()
+        throw new Error(data.error || "下载失败")
+      }
+      const blob = await response.blob()
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement("a")
+      a.href = url
+      a.download = "translated.pdf"
+      document.body.appendChild(a)
+      a.click()
+      document.body.removeChild(a)
+      URL.revokeObjectURL(url)
+    } catch (err) {
+      setDownloadError(err instanceof Error ? err.message : "下载失败")
+    } finally {
+      setDownloading(false)
+    }
+  }
 
   return (
     <motion.div
@@ -29,14 +56,18 @@ export function ResultPanel({ jobId, stats, onReset }: ResultPanelProps) {
         <p>└─ 格式: PDF</p>
       </div>
 
+      {downloadError && (
+        <p className="text-sm text-red-400 mb-3">{downloadError}</p>
+      )}
+
       <div className="flex gap-3">
-        <a
-          href={downloadUrl}
-          download="translated.pdf"
-          className="px-6 py-2.5 rounded-lg bg-gradient-to-r from-indigo-600 to-purple-600 text-white font-medium text-sm hover:shadow-lg hover:shadow-indigo-500/25 transition-shadow inline-block"
+        <button
+          onClick={handleDownload}
+          disabled={downloading}
+          className="px-6 py-2.5 rounded-lg bg-gradient-to-r from-indigo-600 to-purple-600 text-white font-medium text-sm hover:shadow-lg hover:shadow-indigo-500/25 transition-shadow disabled:opacity-50"
         >
-          下载 PDF
-        </a>
+          {downloading ? "下载中..." : "下载 PDF"}
+        </button>
         <button
           onClick={onReset}
           className="px-4 py-2.5 rounded-lg border border-white/10 text-white/60 text-sm hover:bg-white/5 transition-colors"
