@@ -318,8 +318,8 @@ aiofiles>=23.2.0
 # backend/.env
 
 # 腾讯翻译 API (pdf2zh 内置 TencentTranslator 使用)
-TENCENT_SECRET_ID=your_secret_id_here
-TENCENT_SECRET_KEY=your_secret_key_here
+TENCENTCLOUD_SECRET_ID=your_secret_id_here
+TENCENTCLOUD_SECRET_KEY=your_secret_key_here
 
 # 服务配置
 HOST=0.0.0.0
@@ -889,8 +889,8 @@ npm run dev               # http://localhost:3000
 ### Python 后端 (`backend/.env`)
 
 ```bash
-TENCENT_SECRET_ID=your_secret_id_here
-TENCENT_SECRET_KEY=your_secret_key_here
+TENCENTCLOUD_SECRET_ID=your_secret_id_here
+TENCENTCLOUD_SECRET_KEY=your_secret_key_here
 HOST=0.0.0.0
 PORT=8000
 MAX_FILE_SIZE=20971520
