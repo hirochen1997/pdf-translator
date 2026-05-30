@@ -1,21 +1,39 @@
 import { NextRequest, NextResponse } from "next/server"
-import { retrieveResult } from "@/lib/result-store"
+
+const PYTHON_BACKEND = process.env.PYTHON_BACKEND_URL || "http://localhost:8000"
 
 export async function GET(request: NextRequest) {
-  const jobId = request.nextUrl.searchParams.get("jobId")
-  if (!jobId) {
-    return NextResponse.json({ error: "Missing jobId" }, { status: 400 })
+  const taskId = request.nextUrl.searchParams.get("taskId")
+  const format = request.nextUrl.searchParams.get("format") || "mono"
+
+  if (!taskId) {
+    return NextResponse.json({ error: "Missing taskId" }, { status: 400 })
   }
 
-  const pdfBytes = await retrieveResult(jobId)
-  if (!pdfBytes) {
-    return NextResponse.json({ error: "Result not found or expired" }, { status: 404 })
-  }
+  try {
+    const response = await fetch(`${PYTHON_BACKEND}/api/download/${taskId}/${format}`)
 
-  return new NextResponse(Buffer.from(pdfBytes), {
-    headers: {
-      "Content-Type": "application/pdf",
-      "Content-Disposition": `attachment; filename="translated.pdf"`,
-    },
-  })
+    if (!response.ok) {
+      const text = await response.text()
+      return NextResponse.json(
+        { error: `Download failed: ${text}` },
+        { status: response.status }
+      )
+    }
+
+    const pdfBytes = await response.arrayBuffer()
+    const filename = format === "mono" ? "translated.pdf" : "translated-dual.pdf"
+
+    return new NextResponse(pdfBytes, {
+      headers: {
+        "Content-Type": "application/pdf",
+        "Content-Disposition": `attachment; filename="${filename}"`,
+      },
+    })
+  } catch (err) {
+    return NextResponse.json(
+      { error: `Cannot connect to Python backend: ${err instanceof Error ? err.message : String(err)}` },
+      { status: 502 }
+    )
+  }
 }

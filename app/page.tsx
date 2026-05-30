@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useRef } from "react"
 import { AnimatePresence, motion } from "framer-motion"
 import { Header } from "@/components/Header"
 import { HeroSection } from "@/components/HeroSection"
@@ -17,17 +17,18 @@ type AppState = "idle" | "translating" | "done" | "error"
 export default function Home() {
   const [state, setState] = useState<AppState>("idle")
   const [progress, setProgress] = useState<TranslateProgress | null>(null)
-  const [result, setResult] = useState<{
-    jobId: string
-    stats: { totalChars: number; codeBlocks: number; totalPages: number }
-  } | null>(null)
+  const [taskId, setTaskId] = useState("")
+  const [stats, setStats] = useState<{ total_chars: number; pages: number }>({ total_chars: 0, pages: 0 })
   const [error, setError] = useState<string | null>(null)
+  const taskIdRef = useRef("")
+  const statsRef = useRef<{ total_chars: number; pages: number }>({ total_chars: 0, pages: 0 })
 
   const handleUpload = async (file: File) => {
     setState("translating")
     setError(null)
     setProgress(null)
-    setResult(null)
+    setTaskId("")
+    setStats({ total_chars: 0, pages: 0 })
 
     const formData = new FormData()
     formData.append("file", file)
@@ -47,33 +48,56 @@ export default function Home() {
 
       const reader = response.body?.getReader()
       const decoder = new TextDecoder()
+      let buffer = ""
 
       while (reader) {
         const { done, value } = await reader.read()
         if (done) break
 
-        const text = decoder.decode(value)
-        const lines = text.split("\n").filter((l) => l.startsWith("data: "))
+        buffer += decoder.decode(value, { stream: true })
+        const lines = buffer.split("\n")
+        buffer = lines.pop() || ""
 
+        let currentEvent = ""
         for (const line of lines) {
-          try {
-            const data = JSON.parse(line.slice(6))
-            if (data.error) {
-              setState("error")
-              setError(data.error)
-              return
+          if (line.startsWith("event: ")) {
+            currentEvent = line.slice(7).trim()
+          } else if (line.startsWith("data: ")) {
+            try {
+              const data = JSON.parse(line.slice(6))
+
+              if (currentEvent === "complete") {
+                taskIdRef.current = data.task_id || ""
+                statsRef.current = data.stats || { total_chars: 0, pages: 0 }
+                setTaskId(taskIdRef.current)
+                setStats(statsRef.current)
+                setState("done")
+                return
+              }
+
+              if (currentEvent === "error") {
+                setState("error")
+                setError(data.message || "Translation failed")
+                return
+              }
+
+              if (currentEvent === "progress") {
+                setProgress(data as TranslateProgress)
+              }
+            } catch {
+              // ignore parse errors
             }
-            if (data.stage === "rebuilding" && data.percent === 100) {
-              const parsed = JSON.parse(data.message)
-              setResult(parsed)
-              setState("done")
-            } else {
-              setProgress(data)
-            }
-          } catch {
-            // ignore parse errors for incomplete chunks
+            currentEvent = ""
           }
         }
+      }
+
+      // If we reach here without a complete event, check if we have task_id from progress
+      if (taskIdRef.current) {
+        setState("done")
+      } else {
+        setState("error")
+        setError("Translation stream ended unexpectedly")
       }
     } catch (err) {
       setState("error")
@@ -120,7 +144,7 @@ export default function Home() {
               </motion.div>
             )}
 
-            {state === "done" && result && (
+            {state === "done" && (
               <motion.div
                 key="result"
                 initial={{ opacity: 0, y: 20 }}
@@ -128,8 +152,8 @@ export default function Home() {
                 exit={{ opacity: 0, y: -20 }}
               >
                 <ResultPanel
-                  jobId={result.jobId}
-                  stats={result.stats}
+                  taskId={taskId}
+                  stats={stats}
                   onReset={() => setState("idle")}
                 />
               </motion.div>
@@ -150,13 +174,13 @@ export default function Home() {
             <FeatureCard
               icon="⬡"
               title="智能识别"
-              description="自动识别代码块、公式、URL，保持原样不翻译"
+              description="AI 深度学习模型精确识别代码块、公式、图表区域"
               delay={0}
             />
             <FeatureCard
               icon="⬡"
               title="格式保留"
-              description="在原始 PDF 布局上覆盖翻译，保留排版结构"
+              description="原地修改 PDF 内容流，完美保留原始排版"
               delay={0.1}
             />
             <FeatureCard

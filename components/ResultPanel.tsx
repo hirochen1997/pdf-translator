@@ -3,10 +3,11 @@
 import { useState, useCallback } from "react"
 import { motion } from "framer-motion"
 import { Toast } from "./Toast"
+import type { DownloadFormat } from "@/lib/types"
 
 interface ResultPanelProps {
-  jobId: string
-  stats: { totalChars: number; codeBlocks: number; totalPages: number }
+  taskId: string
+  stats: { total_chars: number; pages: number }
   onReset: () => void
 }
 
@@ -37,25 +38,26 @@ function saveFileViaLink(blob: Blob, filename: string): void {
   URL.revokeObjectURL(url)
 }
 
-export function ResultPanel({ jobId, stats, onReset }: ResultPanelProps) {
-  const [downloading, setDownloading] = useState(false)
+export function ResultPanel({ taskId, stats, onReset }: ResultPanelProps) {
+  const [downloading, setDownloading] = useState<DownloadFormat | null>(null)
   const [toast, setToast] = useState<{ message: string; type: "success" | "error" } | null>(null)
 
   const hideToast = useCallback(() => setToast(null), [])
 
-  const handleDownload = async () => {
-    setDownloading(true)
+  const handleDownload = async (format: DownloadFormat) => {
+    setDownloading(format)
     try {
-      const response = await fetch(`/api/download?jobId=${jobId}`)
+      const response = await fetch(`/api/download?taskId=${taskId}&format=${format}`)
       if (!response.ok) {
         const data = await response.json()
         throw new Error(data.error || "下载失败")
       }
       const blob = await response.blob()
 
-      const saved = await saveFileViaPicker(blob, "translated.pdf")
+      const filename = format === "mono" ? "translated.pdf" : "translated-dual.pdf"
+      const saved = await saveFileViaPicker(blob, filename)
       if (!saved) {
-        saveFileViaLink(blob, "translated.pdf")
+        saveFileViaLink(blob, filename)
       }
 
       setToast({ message: "PDF 下载完成！", type: "success" })
@@ -63,7 +65,7 @@ export function ResultPanel({ jobId, stats, onReset }: ResultPanelProps) {
       if (err instanceof Error && err.message.includes("aborted")) return
       setToast({ message: err instanceof Error ? err.message : "下载失败", type: "error" })
     } finally {
-      setDownloading(false)
+      setDownloading(null)
     }
   }
 
@@ -80,19 +82,25 @@ export function ResultPanel({ jobId, stats, onReset }: ResultPanelProps) {
         </div>
 
         <div className="font-mono text-sm text-white/60 space-y-1 mb-6">
-          <p>├─ 翻译字符: {stats.totalChars.toLocaleString()}</p>
-          <p>├─ 代码块: {stats.codeBlocks} 处 (已保留)</p>
-          <p>├─ 总页数: {stats.totalPages}</p>
+          <p>├─ 文件大小: {(stats.total_chars / 1024).toFixed(1)} KB</p>
+          <p>├─ 总页数: {stats.pages}</p>
           <p>└─ 格式: PDF</p>
         </div>
 
-        <div className="flex gap-3">
+        <div className="flex gap-3 flex-wrap">
           <button
-            onClick={handleDownload}
-            disabled={downloading}
+            onClick={() => handleDownload("mono")}
+            disabled={downloading !== null}
             className="px-6 py-2.5 rounded-lg bg-gradient-to-r from-indigo-600 to-purple-600 text-white font-medium text-sm hover:shadow-lg hover:shadow-indigo-500/25 transition-shadow disabled:opacity-50"
           >
-            {downloading ? "下载中..." : "下载 PDF"}
+            {downloading === "mono" ? "下载中..." : "下载译文 PDF"}
+          </button>
+          <button
+            onClick={() => handleDownload("dual")}
+            disabled={downloading !== null}
+            className="px-6 py-2.5 rounded-lg border border-indigo-500/30 text-indigo-400 font-medium text-sm hover:bg-indigo-500/10 transition-colors disabled:opacity-50"
+          >
+            {downloading === "dual" ? "下载中..." : "下载双语对照 PDF"}
           </button>
           <button
             onClick={onReset}

@@ -4,21 +4,25 @@ import { motion } from "framer-motion"
 import type { TranslateProgress } from "@/lib/types"
 
 const stageLabels: Record<string, string> = {
-  parsing: "PDF 解析",
-  detecting: "代码识别",
+  loading: "加载 PDF",
+  detecting: "布局检测",
   translating: "文本翻译",
   rebuilding: "PDF 重建",
 }
 
-export function ProgressPanel({ progress }: { progress: TranslateProgress }) {
-  const stages = ["parsing", "detecting", "translating", "rebuilding"] as const
+interface ProgressPanelProps {
+  progress: TranslateProgress
+}
+
+export function ProgressPanel({ progress }: ProgressPanelProps) {
+  const stages = ["loading", "detecting", "translating", "rebuilding"] as const
   const currentStageIndex = stages.indexOf(progress.stage)
 
   return (
     <div className="rounded-xl border border-white/10 bg-white/[0.03] backdrop-blur-xl p-6">
       <div className="flex items-center justify-between mb-4">
         <span className="text-sm text-white/60">
-          {stageLabels[progress.stage]}...
+          {stageLabels[progress.stage] || progress.stage}...
         </span>
         <span className="font-mono text-indigo-400 text-lg">
           {progress.percent}%
@@ -59,13 +63,13 @@ export function ProgressPanel({ progress }: { progress: TranslateProgress }) {
         ))}
       </div>
 
-      {progress.stage === "translating" && (
+      {progress.current_page != null && progress.total_pages != null && progress.total_pages > 0 && (
         <p className="text-xs text-white/40 mt-4 font-mono">
-          {progress.currentPage} / {progress.totalPages} blocks
+          {progress.current_page} / {progress.total_pages} pages
         </p>
       )}
 
-      {progress.message && progress.stage !== "rebuilding" && (
+      {progress.message && (
         <p className="text-xs text-white/30 mt-2">{progress.message}</p>
       )}
     </div>

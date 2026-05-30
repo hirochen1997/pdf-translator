@@ -31,3 +31,14 @@ public/fonts/*.ttf
 
 # temp results
 .tmp/
+
+# python
+backend/venv/
+backend/.tmp/
+backend/__pycache__/
+backend/**/__pycache__/
+backend/**/*.pyc
+backend/.env
+
+# firecrawl research
+.firecrawl/

@@ -1,20 +1,17 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  webpack: (config, { isServer }) => {
-    config.resolve.alias.canvas = false
-    config.resolve.alias.encoding = false
-
-    if (isServer) {
-      config.externals = config.externals || []
-      if (Array.isArray(config.externals)) {
-        config.externals.push("pdfjs-dist")
-      }
-    }
-
-    return config
+  async rewrites() {
+    return [
+      {
+        source: "/api/py/:path*",
+        destination: "http://localhost:8000/api/:path*",
+      },
+    ]
   },
   experimental: {
-    serverComponentsExternalPackages: ["pdfjs-dist"],
+    outputFileTracingExcludes: {
+      "*": ["backend/**/*"],
+    },
   },
 }
 
