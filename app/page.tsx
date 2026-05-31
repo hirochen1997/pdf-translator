@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useRef } from "react"
+import { useState } from "react"
 import { AnimatePresence, motion } from "framer-motion"
 import { Header } from "@/components/Header"
 import { HeroSection } from "@/components/HeroSection"
@@ -10,98 +10,184 @@ import { ResultPanel } from "@/components/ResultPanel"
 import { ErrorPanel } from "@/components/ErrorPanel"
 import { FeatureCard } from "@/components/FeatureCard"
 import { Footer } from "@/components/Footer"
-import type { TranslateProgress } from "@/lib/types"
+import type { TranslateProgress, TranslateResult } from "@/lib/types"
+import { getBackendUrl } from "@/lib/api"
 
 type AppState = "idle" | "translating" | "done" | "error"
 
 export default function Home() {
   const [state, setState] = useState<AppState>("idle")
   const [progress, setProgress] = useState<TranslateProgress | null>(null)
-  const [taskId, setTaskId] = useState("")
-  const [stats, setStats] = useState<{ total_chars: number; pages: number }>({ total_chars: 0, pages: 0 })
+  const [result, setResult] = useState<TranslateResult | null>(null)
   const [error, setError] = useState<string | null>(null)
-  const taskIdRef = useRef("")
-  const statsRef = useRef<{ total_chars: number; pages: number }>({ total_chars: 0, pages: 0 })
 
   const handleUpload = async (file: File) => {
     setState("translating")
     setError(null)
-    setProgress(null)
-    setTaskId("")
-    setStats({ total_chars: 0, pages: 0 })
+    setProgress({ stage: "loading", percent: 0, message: "连接翻译服务..." })
+    setResult(null)
 
-    const formData = new FormData()
-    formData.append("file", file)
+    const baseUrl = getBackendUrl()
+    const sessionHash = crypto.randomUUID().replace(/-/g, "").substring(0, 10)
 
     try {
-      const response = await fetch("/api/translate", {
+      setProgress({ stage: "loading", percent: 3, message: "上传文件中..." })
+
+      const uploadFormData = new FormData()
+      uploadFormData.append("files", file)
+
+      const uploadRes = await fetch(
+        `${baseUrl}/gradio_api/upload?upload_id=${sessionHash}`,
+        { method: "POST", body: uploadFormData }
+      )
+
+      if (!uploadRes.ok) throw new Error(`文件上传失败: ${uploadRes.status}`)
+      const uploadData = await uploadRes.json()
+      const filePath = uploadData[0]
+      const fileUrl = `${baseUrl}/gradio_api/file=${filePath}`
+
+      setProgress({ stage: "loading", percent: 8, message: "提交翻译任务..." })
+
+      const submitRes = await fetch(`${baseUrl}/gradio_api/queue/join?`, {
         method: "POST",
-        body: formData,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          data: [
+            "File",
+            {
+              path: filePath,
+              url: fileUrl,
+              orig_name: file.name,
+              size: file.size,
+              mime_type: "application/pdf",
+              meta: { _type: "gradio.FileData" },
+            },
+            "",
+            "Google",
+            "English",
+            "Simplified Chinese",
+            "All",
+            "",
+            "",
+            "4",
+            false,
+            false,
+            "",
+            false,
+            "",
+            null,
+            "",
+            "",
+            "",
+            "",
+          ],
+          event_data: null,
+          fn_index: 5,
+          trigger_id: 33,
+          session_hash: sessionHash,
+        }),
       })
 
-      if (!response.ok) {
-        const data = await response.json()
-        setState("error")
-        setError(data.error || "Upload failed")
-        return
+      if (!submitRes.ok) {
+        const errText = await submitRes.text()
+        throw new Error(`提交翻译任务失败: ${submitRes.status} ${errText.substring(0, 200)}`)
       }
 
-      const reader = response.body?.getReader()
-      const decoder = new TextDecoder()
-      let buffer = ""
+      const submitData = await submitRes.json()
+      const eventId = submitData.event_id
 
-      while (reader) {
-        const { done, value } = await reader.read()
-        if (done) break
+      if (!eventId) throw new Error("未获取到翻译任务 ID")
 
-        buffer += decoder.decode(value, { stream: true })
-        const lines = buffer.split("\n")
-        buffer = lines.pop() || ""
+      setProgress({ stage: "detecting", percent: 10, message: "布局检测中..." })
 
-        let currentEvent = ""
-        for (const line of lines) {
-          if (line.startsWith("event: ")) {
-            currentEvent = line.slice(7).trim()
-          } else if (line.startsWith("data: ")) {
-            try {
-              const data = JSON.parse(line.slice(6))
+      const eventSource = new EventSource(
+        `${baseUrl}/gradio_api/queue/data?session_hash=${sessionHash}`
+      )
 
-              if (currentEvent === "complete") {
-                taskIdRef.current = data.task_id || ""
-                statsRef.current = data.stats || { total_chars: 0, pages: 0 }
-                setTaskId(taskIdRef.current)
-                setStats(statsRef.current)
-                setState("done")
-                return
-              }
+      const resultPromise = new Promise<TranslateResult>((resolve, reject) => {
+        eventSource.onmessage = (e) => {
+          try {
+            const msg = JSON.parse(e.data)
 
-              if (currentEvent === "error") {
-                setState("error")
-                setError(data.message || "Translation failed")
-                return
-              }
-
-              if (currentEvent === "progress") {
-                setProgress(data as TranslateProgress)
-              }
-            } catch {
-              // ignore parse errors
+            if (msg.msg === "estimation") {
+              setProgress({ stage: "loading", percent: 10, message: "等待处理..." })
             }
-            currentEvent = ""
+
+            if (msg.msg === "process_starts") {
+              setProgress({ stage: "detecting", percent: 10, message: "布局检测中..." })
+            }
+
+            if (msg.msg === "progress") {
+              const pd = msg.progress_data?.[0]
+              if (pd && pd.progress != null) {
+                const pct = Math.round(pd.progress * 100)
+                setProgress({
+                  stage: pct < 20 ? "detecting" : "translating",
+                  percent: pct,
+                  message: pd.desc || "翻译中...",
+                  current_page: pd.index != null ? pd.index + 1 : undefined,
+                  total_pages: pd.length != null ? pd.length : undefined,
+                })
+              }
+            }
+
+            if (msg.msg === "process_completed") {
+              eventSource.close()
+
+              if (!msg.success) {
+                reject(new Error("翻译失败"))
+                return
+              }
+
+              const outputData = msg.output?.data
+              if (!outputData) {
+                reject(new Error("翻译结果为空"))
+                return
+              }
+
+              const monoFile = outputData[0]
+              const dualFile = outputData[2]
+
+              const makeUrl = (f: any) => {
+                if (!f) return ""
+                if (f.url && f.url.startsWith("http")) return f.url
+                if (f.url) return `${baseUrl}${f.url}`
+                if (f.path) return `${baseUrl}/gradio_api/file=${f.path}`
+                return ""
+              }
+
+              resolve({
+                monoUrl: makeUrl(monoFile),
+                dualUrl: makeUrl(dualFile),
+                fileName: file.name.replace(/\.pdf$/i, "-translated.pdf"),
+              })
+            }
+
+            if (msg.msg === "error" || msg.msg === "unexpected_error") {
+              eventSource.close()
+              reject(new Error(msg.message || msg.error || "翻译失败"))
+            }
+          } catch (parseErr) {
           }
         }
-      }
 
-      // If we reach here without a complete event, check if we have task_id from progress
-      if (taskIdRef.current) {
-        setState("done")
-      } else {
-        setState("error")
-        setError("Translation stream ended unexpectedly")
-      }
+        eventSource.onerror = () => {
+          eventSource.close()
+          reject(new Error("翻译连接中断"))
+        }
+
+        setTimeout(() => {
+          eventSource.close()
+          reject(new Error("翻译超时"))
+        }, 600000)
+      })
+
+      const translateResult = await resultPromise
+      setResult(translateResult)
+      setState("done")
     } catch (err) {
       setState("error")
-      setError(err instanceof Error ? err.message : "Network error")
+      setError(err instanceof Error ? err.message : "网络错误")
     }
   }
 
@@ -144,7 +230,7 @@ export default function Home() {
               </motion.div>
             )}
 
-            {state === "done" && (
+            {state === "done" && result && (
               <motion.div
                 key="result"
                 initial={{ opacity: 0, y: 20 }}
@@ -152,8 +238,7 @@ export default function Home() {
                 exit={{ opacity: 0, y: -20 }}
               >
                 <ResultPanel
-                  taskId={taskId}
-                  stats={stats}
+                  result={result}
                   onReset={() => setState("idle")}
                 />
               </motion.div>
@@ -164,6 +249,7 @@ export default function Home() {
                 key="error"
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -20 }}
               >
                 <ErrorPanel message={error} onRetry={() => setState("idle")} />
               </motion.div>

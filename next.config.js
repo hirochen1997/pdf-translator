@@ -1,12 +1,8 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  async rewrites() {
-    return [
-      {
-        source: "/api/py/:path*",
-        destination: "http://localhost:8000/api/:path*",
-      },
-    ]
+  output: "export",
+  images: {
+    unoptimized: true,
   },
   experimental: {
     outputFileTracingExcludes: {

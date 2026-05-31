@@ -59,14 +59,17 @@ def _patched_tencent_init(self, lang_in, lang_out, model, envs=None, ignore_cach
 
 TencentTranslator.__init__ = _patched_tencent_init
 
-os.environ["TENCENTCLOUD_SECRET_ID"] = config.TENCENTCLOUD_SECRET_ID
-os.environ["TENCENTCLOUD_SECRET_KEY"] = config.TENCENTCLOUD_SECRET_KEY
+if config.TENCENTCLOUD_SECRET_ID:
+    os.environ["TENCENTCLOUD_SECRET_ID"] = config.TENCENTCLOUD_SECRET_ID
+if config.TENCENTCLOUD_SECRET_KEY:
+    os.environ["TENCENTCLOUD_SECRET_KEY"] = config.TENCENTCLOUD_SECRET_KEY
 
 app = FastAPI(title="PDF Translator Backend", version="1.0.0")
 
+cors_origins = os.getenv("CORS_ORIGINS", "*").split(",")
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=cors_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

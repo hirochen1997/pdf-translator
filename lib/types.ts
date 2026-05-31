@@ -8,21 +8,10 @@ export interface TranslateProgress {
   total_pages?: number
 }
 
-export interface TranslateComplete {
-  task_id: string
-  stats: {
-    total_chars: number
-    pages: number
-  }
+export interface TranslateResult {
+  monoUrl: string
+  dualUrl: string
+  fileName: string
 }
-
-export interface TranslateError {
-  message: string
-}
-
-export type SSEEvent =
-  | { type: "progress"; data: TranslateProgress }
-  | { type: "complete"; data: TranslateComplete }
-  | { type: "error"; data: TranslateError }
 
 export type DownloadFormat = "mono" | "dual"

@@ -3,11 +3,10 @@
 import { useState, useCallback } from "react"
 import { motion } from "framer-motion"
 import { Toast } from "./Toast"
-import type { DownloadFormat } from "@/lib/types"
+import type { DownloadFormat, TranslateResult } from "@/lib/types"
 
 interface ResultPanelProps {
-  taskId: string
-  stats: { total_chars: number; pages: number }
+  result: TranslateResult
   onReset: () => void
 }
 
@@ -38,7 +37,7 @@ function saveFileViaLink(blob: Blob, filename: string): void {
   URL.revokeObjectURL(url)
 }
 
-export function ResultPanel({ taskId, stats, onReset }: ResultPanelProps) {
+export function ResultPanel({ result, onReset }: ResultPanelProps) {
   const [downloading, setDownloading] = useState<DownloadFormat | null>(null)
   const [toast, setToast] = useState<{ message: string; type: "success" | "error" } | null>(null)
 
@@ -47,14 +46,18 @@ export function ResultPanel({ taskId, stats, onReset }: ResultPanelProps) {
   const handleDownload = async (format: DownloadFormat) => {
     setDownloading(format)
     try {
-      const response = await fetch(`/api/download?taskId=${taskId}&format=${format}`)
-      if (!response.ok) {
-        const data = await response.json()
-        throw new Error(data.error || "下载失败")
-      }
+      const url = format === "mono" ? result.monoUrl : result.dualUrl
+      if (!url) throw new Error("下载链接不可用")
+
+      const response = await fetch(url)
+      if (!response.ok) throw new Error("下载失败")
+
       const blob = await response.blob()
 
-      const filename = format === "mono" ? "translated.pdf" : "translated-dual.pdf"
+      const filename = format === "mono"
+        ? result.fileName
+        : result.fileName.replace(/\.pdf$/i, "-dual.pdf")
+
       const saved = await saveFileViaPicker(blob, filename)
       if (!saved) {
         saveFileViaLink(blob, filename)
@@ -82,9 +85,8 @@ export function ResultPanel({ taskId, stats, onReset }: ResultPanelProps) {
         </div>
 
         <div className="font-mono text-sm text-white/60 space-y-1 mb-6">
-          <p>├─ 文件大小: {(stats.total_chars / 1024).toFixed(1)} KB</p>
-          <p>├─ 总页数: {stats.pages}</p>
-          <p>└─ 格式: PDF</p>
+          <p>├─ 格式: PDF</p>
+          <p>└─ 翻译: English → 简体中文</p>
         </div>
 
         <div className="flex gap-3 flex-wrap">
