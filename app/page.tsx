@@ -105,6 +105,8 @@ export default function Home() {
       )
 
       const resultPromise = new Promise<TranslateResult>((resolve, reject) => {
+        let maxPercent = 10
+
         eventSource.onmessage = (e) => {
           try {
             const msg = JSON.parse(e.data)
@@ -114,20 +116,25 @@ export default function Home() {
             }
 
             if (msg.msg === "process_starts") {
+              maxPercent = 10
               setProgress({ stage: "detecting", percent: 10, message: "布局检测中..." })
             }
 
             if (msg.msg === "progress") {
               const pd = msg.progress_data?.[0]
               if (pd && pd.progress != null) {
-                const pct = Math.round(pd.progress * 100)
-                setProgress({
-                  stage: pct < 20 ? "detecting" : "translating",
-                  percent: pct,
-                  message: pd.desc || "翻译中...",
-                  current_page: pd.index != null ? pd.index + 1 : undefined,
-                  total_pages: pd.length != null ? pd.length : undefined,
-                })
+                const rawPct = Math.round(pd.progress * 100)
+                const pct = Math.min(10 + Math.round(rawPct * 0.8), 90)
+                if (pct >= maxPercent) {
+                  maxPercent = pct
+                  setProgress({
+                    stage: pct < 30 ? "detecting" : "translating",
+                    percent: pct,
+                    message: pd.desc || "翻译中...",
+                    current_page: pd.index != null ? pd.index + 1 : undefined,
+                    total_pages: pd.length != null ? pd.length : undefined,
+                  })
+                }
               }
             }
 
