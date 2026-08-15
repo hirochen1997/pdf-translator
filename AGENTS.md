@@ -5,7 +5,7 @@
 ## 项目概览
 
 - **前端**：Next.js 14（React 18 / Tailwind / framer-motion），页面在 `app/`，组件在 `components/`
-- **后端**：FastAPI（Python），SSE 流式推送翻译进度，代码在 `backend/`
+- **后端**：生产环境是部署在 HuggingFace Spaces 的 **pdf2zh 自带 Gradio**（`pdf2zh -i`，端口 7860，由 `backend/Dockerfile` 启动）；前端**直接跨域**调用其 Gradio 队列 API，**无** Next.js 代理层。`backend/` 另含未部署的候选实现：`app.py`（自写 Gradio）与 `main.py`+`api/`+`services/`（FastAPI 方案，即早期设计）
 - **部署**：前端 Cloudflare Pages，线上地址 `https://pdf-translator-1fz.pages.dev`
 - **远程仓库**：`https://github.com/hirochen1997/pdf-translator`（公有）
 
@@ -14,12 +14,13 @@
 - 前端开发：`npm run dev`
 - 前端构建：`npm run build`
 - 前端 Lint：`npm run lint`
-- 后端启动：`cd backend && python app.py`（依赖见 `backend/requirements.txt`）
+- 后端（生产）：部署在 HuggingFace Spaces，由 `backend/Dockerfile` 的 `CMD ["pdf2zh","-i"]` 启动，端口 7860；本地复现：`cd backend && pip install -r requirements.txt && pdf2zh -i`
+- 后端（本地候选）：`cd backend && python app.py`（自写 Gradio）；FastAPI 方案 `python main.py` 需先补装 `fastapi uvicorn`（未在 `requirements.txt` 声明）
 - 测试用文件：`test/testPDF.pdf`（英文技术书，含正文/代码块/公式/目录/脚注等多类型内容）
 
 ## 项目测试要求
 
-1. **后端测试**：验证 SSE 流式推送是否正常工作；用 `curl` 上传 `test/testPDF.pdf` 验证翻译流程
+1. **后端测试**：验证翻译流程可用。生产后端是 pdf2zh Gradio，可走其 Gradio 队列协议用 `curl` 上传 `test/testPDF.pdf` 验证；若测 FastAPI 候选（`main.py`），则验证其自定义 `/api/translate` SSE 端点
 2. **前端测试**：验证交互流程（上传 → 进度 → 结果 → 下载）；用 Playwright 模拟上传 `test/testPDF.pdf` 验证 UI 交互
 
 ## 修改后的验证流程
@@ -40,3 +41,7 @@
 - 不提交 `.env*`（仅允许 `.env.example`）、`*.pem`、密钥文件
 - 不绕过安全检查（不用 `--no-verify` 等）
 - 危险 git 操作（`reset --hard`、`force push`、删分支）需先征得用户同意
+
+## 全局规则引用
+
+本项目遵循全局规则：请**先读取并遵循** `~/skills-hub/rules/global-rules.md` 中的全部约定（问题咨询、文档同步更新、第一性原理与对抗性审查、Git Commit 规范、对话结束 push、GitHub 仓库管理、项目上下文读取、危险操作确认）。若该文件不可用，则仅按本文件约定执行。
