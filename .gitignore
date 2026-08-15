@@ -47,3 +47,4 @@ backend/.env
 
 # trae 专属目录（本机运行时状态，不入库；rules 软链接每台机器由 install-project-rules.sh 建立）
 .trae/
+.workbuddy/
