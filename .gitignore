@@ -45,6 +45,8 @@ backend/.env
 # firecrawl research
 .firecrawl/
 
-# trae 专属目录（本机运行时状态，不入库；rules 软链接每台机器由 install-project-rules.sh 建立）
-.trae/
+# trae 专属目录（本机运行时状态不入库；rules 软链接入库、跨机有效）
+.trae/*
+!.trae/rules/
+!.trae/rules/project_rules.md
 .workbuddy/
